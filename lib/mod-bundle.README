@@ -1,0 +1,14 @@
+
+This mod provides an alternative procedure to generate
+the source and header files required to build QDP/C.
+
+It bundles the 7439 sources files, for all precision
+& Nc (colour) combinations, into less than 300 files.
+
+The makefiles supplied with the official QDP/C distribution
+have NOT been modified to work with mod-bundle.
+
+Run mod-bundle/util/example.sh to install.
+
+PS Remember to set GTAR=gtar GSED=gsed where necessary.
+

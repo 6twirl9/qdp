@@ -1,11 +1,14 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
 
-if($ARGV[0] eq "-c") {
+use Data::Dump qw/dump/ ;
+
+if($ARGV[0] eq "-c" or ( defined $ENV{MOD_BUNDLE} and $ARGV[0] eq "c_source") ) {
   ($cflag, $lib, $dir, @srcs) = @ARGV;
   if ( $lib =~ /^[df][df]/ ) {
     exit 0;
   }
 } else {
+ shift @ARGV if defined $ENV{MOD_BUNDLE} ;
   if($#ARGV!=2) {
     print "$0 <lib> <template> <dest>\n";
     exit 1;
@@ -33,6 +36,17 @@ else { $pc = "_".$lib; }
 if($lib eq "INT") { $color = ''; }
 else { ($color = $lib) =~ s/[^23N]*([23N]*)/$1/; }
 
+if( defined $ENV{MOD_BUNDLE} )
+{
+ printf "GEN_TYPE ... " ;
+ printf "are we generating header? %s\n",((not defined $cflag )?"yes":"no") ;
+ printf "%-16s: %s\n", "Precision", (($precision=~/^$/)?"not specifified":$precision) ;
+ printf "%-16s: %s\n", "Colour", (($color=~/^$/)?"not specifified":$color) ;
+ printf "%-16s: %s\n", "Library", (($lib=~/^$/)?"not specifified":$lib) ;
+ printf "\n" ;
+}
+
+
 $porpc = 'P';
 if($color) { $porpc .= 'C'; }
 
@@ -58,9 +72,23 @@ $us = "_";
 
 if($cflag) {
 
+  if( defined $ENV{MOD_BUNDLE} and @srcs)
+  {
+   printf "Generating functions ...\n" ;
+  }
+
   for $file (@srcs) {
+
+   my %t ;
+   my $t_id = 0 ;
+
     for $dt (@all_types) {
       next if(!compatible_pc($dt,$precision,$color));
+
+     printf "DEBUG %-48s %-16s | %8s | %8s | %s\n", $file, $dt, $precision, $color, compatible_pc($dt,$precision,$color)
+      if defined $ENV{MOD_BUNDLE}
+     ;
+
 
       #$infile_mtime = (stat($file))[9];
       open(INFILE, "<".$file);
@@ -142,9 +170,51 @@ if($cflag) {
 		$toutfn = $outfn;
 		$toutfn =~ s/EQOP/$eqop/;
 		#if((stat($toutfn))[9]<$infile_mtime) {
-	        open(OUTFILE, ">".$toutfn);
-	        print OUTFILE $ttemp;
-                close(OUTFILE);
+                if( defined $ENV{MOD_BUNDLE} )
+                {
+                 my @definition = split '\n', $ttemp ;
+                 my @include =
+                  map {
+                   my $d = $_ ; $d =~ s/#include// ; $d =~ s/[ <>"]//g ; $d
+                  }
+                   grep { /^#include/ } @definition
+                  ;
+                 my @define  =
+                  map {
+                   my @d = split ' ',$_ ; $d[1] =~ s/ *\(.*// ; "#undef  $d[1]"
+                  }
+                   grep { /^#define/ } @definition
+                  ;
+                 my @definition_ = grep { ! /^#include/ } @definition ;
+
+                  push @definition_, "", "", @define ;
+ 
+                  @definition = @definition_ ;
+
+                 my $function = ${[split '/', $toutfn]}[-1] ;
+ 
+                #my @definition = @{["",$head,@{[split '\n',$body]},""]} ;
+                 $t{function}->{$function}->{definition} = [@definition] ;
+                 $t{function}->{$function}->{id} = $t_id ; $t_id++ ;
+                #$t{function}->{$function}->{signature} = $head ;
+
+                 my %control ;
+                  map {
+                   $control{for}    ++ if $_ =~ /\bfor\b/ ;
+                   $control{switch} ++ if $_ =~ /\bswitch\b/ ;
+                   $control{case}   ++ if $_ =~ /\bcase\b/ ;
+                  } @definition ;
+
+                 $t{function}->{$function}->{control} = \%control ;
+                #$t{function}->{$function}->{mangled_name} = $mangled_name . ".c" ;
+                 $t{include} = [ @include ] ;
+                }
+                else
+                {
+	         open(OUTFILE, ">".$toutfn);
+	         print OUTFILE $ttemp;
+                 close(OUTFILE);
+                }
 		#}
 	      }
 	    }
@@ -189,15 +259,70 @@ if($cflag) {
 	  $temp =~ s/\$C/$color/g;
 	  $temp =~ s/\$N/$cn/g;
           #if((stat($outfn))[9]<$infile_mtime) {
-	    open(OUTFILE, ">".$outfn);
-	    print OUTFILE $temp;
-            close(OUTFILE);
+          if( defined $ENV{MOD_BUNDLE} )
+          {
+           my @definition = split '\n', $temp ;
+           my @include =
+            map {
+             my $d = $_ ; $d =~ s/#include// ; $d =~ s/[ <>"]//g ; $d
+            }
+             grep { /^#include/ } @definition
+            ;
+           my @define =
+            map {
+             my @d = split ' ',$_ ; $d[1] =~ s/ *\(.*// ; "#undef  $d[1]"
+            }
+            grep { /^#define/ } @definition
+           ;
+
+           my @definition_ = grep { ! /^#include/ } @definition ;
+
+            push @definition_, "", "", @define ;
+
+            @definition = @definition_ ;
+
+           my $function = ${[split '/', $outfn]}[-1] ;
+ 
+          #my @definition = @{["",$head,@{[split '\n',$body]},""]} ;
+           $t{function}->{$function}->{definition} = [@definition] ;
+           $t{function}->{$function}->{id} = $t_id ; $t_id++ ;
+          #$t{function}->{$function}->{signature} = $head ;
+
+           my %control ;
+            map {
+             $control{for}    ++ if $_ =~ /\bfor\b/ ;
+             $control{switch} ++ if $_ =~ /\bswitch\b/ ;
+             $control{case}   ++ if $_ =~ /\bcase\b/ ;
+            } @definition ;
+
+           $t{function}->{$function}->{control} = \%control ;
+          #$t{function}->{$function}->{mangled_name} = $mangled_name . ".c" ;
+           $t{include} = [ @include ] ;
+          }
+          else
+          {
+	   open(OUTFILE, ">".$outfn);
+	   print OUTFILE $temp;
+           close(OUTFILE);
+          }
           #}
 	}
       }
 
     }
+
+    if( defined $ENV{MOD_BUNDLE} )
+    {
+     my $file_ = ${[split '/',$file]}[-1] ; $file_ =~ s/^QDP_/QDP_${lib}_/ ;
+     open my $o,">","$dir/$file_.pm" ;
+     printf $o "%s",dump(%t) ;
+     close $o ;
+     printf "   ... $file_.pm\n" ;
+    }
+
   }
+
+  printf "\n" if defined $ENV{MOD_BUNDLE} ;
 
 } else { # not cflag
 

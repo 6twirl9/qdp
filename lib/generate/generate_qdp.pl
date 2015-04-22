@@ -1,5 +1,11 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
 use strict;
+
+# MOD_BUNDLE
+
+use Data::Dump qw/dump/ ;
+my %t ;
+my $t_id = 0 ;
 
 my $maxnn = 1024;
 
@@ -20,6 +26,15 @@ sub get_arg($\$) {
     }
   }
   return $r;
+}
+
+if( defined $ENV{MOD_BUNDLE} )
+{
+ $making_header_file = undef ;
+ $making_header_file = 0 if $ARGV[0] eq "c_source" ;
+ $making_header_file = 1 if $ARGV[0] eq "header" ;
+
+ shift(@ARGV) if defined $making_header_file ;
 }
 
 for(my $i=0; $i<=$#ARGV; $i++) {
@@ -64,6 +79,16 @@ $lib = $pc;
 if(!$lib) { $lib = '_int'; }
 
 $outdir =~ s/(.*)[\/]*/$1\//;
+
+
+if( defined $ENV{MOD_BUNDLE} )
+{
+ printf "GEN_QDP ...  are we generating header? %s\n",(($making_header_file == 1)?"yes":"no") ;
+ printf "%-16s: %s\n", "Precision", (($precision=~/^$/)?"not specifified":$precision) ;
+ printf "%-16s: %s\n", "Colour", (($precision=~/^$/)?"not specifified":$color) ;
+ printf "%-16s: %s\n", "Library", (($lib=~/^$/)?"not specifified":(uc $lib)) ;
+ printf "\n" ;
+}
 
 my $hlib = lc $lib;
 if($precision eq "FD") { $hlib =~ s/fd/df/; }
@@ -1255,6 +1280,32 @@ sub write_function(\%$\%$\%\%) {
       print HFILE get_h_comment();
       print HFILE $out;
     } else {
+     if( defined $ENV{MOD_BUNDLE} )
+     {
+      my $function = $name . ".c" ;
+      my($funcname) = "/**************** FUNC_NAME $function ********************/\n\n" ;
+      my($head) = "void ".$name.$args ;
+      my($body) = func_body($dest, $op, $src1, $func, $src2, $x1, $x2, $x3);
+
+      my @definition = @{["",$head,@{[split '\n',$body]},""]} ;
+      $t{function}->{$function}->{definition} = [@definition] ;
+      $t{function}->{$function}->{id} = $t_id ; $t_id++ ;
+      $t{function}->{$function}->{signature} = $head ;
+      my %control ;
+
+      map {
+       $control{for}    ++ if $_ =~ /\bfor\b/ ;
+       $control{switch} ++ if $_ =~ /\bswitch\b/ ;
+       $control{case}   ++ if $_ =~ /\bcase\b/ ;
+      } @definition ;
+      my @comment = split '\n',get_c_comment() ;
+      $t{function}->{$function}->{comment} = [@comment] ;
+      $t{function}->{$function}->{control} = \%control ;
+      $t{function}->{$function}->{mangled_name} = $mangled_name . ".c" ;
+      $t{include} = [ "qdp".$hlib."_internal.h" ] ;
+     }
+     else
+     {
       my($head) = "void\n".$name.$args."\n";
       my($body) = func_body($dest, $op, $src1, $func, $src2, $x1, $x2, $x3);
       open CFILE, '>'.$outdir.$mangled_name.".c";
@@ -1262,6 +1313,7 @@ sub write_function(\%$\%$\%\%) {
       print CFILE "#include \"qdp".$hlib."_internal.h\"\n\n";
       print CFILE $head.$body;
       close CFILE;
+     }
     }
   }
 }
@@ -1358,3 +1410,20 @@ sub make_functions(\%) {
 # Last we actually create the functions
 
 scalar eval `cat ${thisdir}functions.pl`;
+
+if( defined $ENV{MOD_BUNDLE} )
+{
+ if( $making_header_file == 0 )
+ {
+  my $output = $outdir ; $output =~ s,/*$,, ; $output = "." if $output =~ /^$/ ;
+
+  $lib = uc $lib ;
+  printf "Generating functions ...\n" ;
+  open my $o,">", "$output/QDP$lib.c.pm" ;
+   printf $o "%s",dump(%t) ;
+  close $o ;
+  printf "   ... QDP$lib.c.pm\n" ;
+  printf "\n" ;
+ }
+}
+

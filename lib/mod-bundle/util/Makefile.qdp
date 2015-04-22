@@ -1,0 +1,77 @@
+
+.SECONDEXPANSION:
+
+.PHONY: qdp_source bundle clean
+
+mod := mod-bundle
+
+ifndef GSED
+ sed := sed
+else
+ sed := $(GSED)
+endif
+
+# === extract targets from Makefile.am -> QDP_SOURCE
+
+TARGET := \
+$(shell							\
+grep -e 'QDP_C[0-3N]_DIRS  *=' Makefile.am		\
+ | $(sed) -e 's/^[^=]* *=//;s/^ *//;s/  */\n/g;/^ *$$/d'\
+ | sort							\
+)							\
+ qdp_int
+
+QDP_SOURCE := \
+ $(addprefix $(mod)/src/,\
+ $(addsuffix    .c.pm,\
+  $(foreach sym, $(TARGET), $(sym)/$(shell echo $(sym) | tr '[a-z]' '[A-Z]') )	\
+ ))
+
+#///
+
+# === list of generated files and directories
+
+qdp_common_output := \
+$(shell \
+  generate/generate.sh $(mod)/src/qdp_common/QDP_COMMON.c.pm common show_generated_only	\
+   | grep GENERATED									\
+   | awk '{print $$NF;}'								\
+)
+
+#qdp_source_output := \
+#$(shell \
+# for i in $(QDP_SOURCE) ; do							\
+#  generate/generate.sh $$i c_source show_generated_only |grep GENERATED ;	\
+# done | awk '{print $$NF;}'							\
+#)
+
+#///
+
+qdp_common := $(mod)/src/qdp_common/QDP_COMMON
+
+bundle: $(QDP_SOURCE) $(qdp_common)
+	@$(mod)/util/bundle-source-files.pl $$(ls $(mod)/src/qdp_*/*.c.pm)
+
+$(qdp_common):
+	@[[ -d $(mod)/src/qdp_common ]] || cp -pr qdp_common $(mod)/src/
+	@generate/generate.sh $@ common
+$(QDP_SOURCE):
+	@generate/generate.sh $@ header c_source >& $(mod)/src/debug/$$(basename $@)
+
+listing:
+	@echo $(QDP_SOURCE)
+	@echo
+	@echo TARGET: $(TARGET)
+	@echo
+	@generate/generate.sh $(mod)/src/qdp_common/QDP_COMMON.c.pm common show_generated_only | grep GENERATED
+	@echo
+	@for i in $(QDP_SOURCE) ; do							\
+	  generate/generate.sh $$i c_source show_generated_only |grep GENERATED ;	\
+	 done
+
+clean:
+	@echo "Removing ... $(TARGET)"
+	@echo "         ... $(qdp_common_output)"
+	@echo "         ... $$(dirname $(qdp_common))"
+	@rm -fr $(qdp_common_output) $(qdp_common) $$(dirname $(qdp_common)) $(addprefix $(mod)/src/, $(TARGET) ) $(mod)/src
+	

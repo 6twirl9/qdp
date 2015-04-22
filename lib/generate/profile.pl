@@ -1,4 +1,6 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
+
+shift(@ARGV) if defined $ENV{MOD_BUNDLE} ;
 
 ($infile, $outfile) = @ARGV;
 
